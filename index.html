@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Jastarnia – GFS / ECMWF</title>
 
-<style>
+.date.sunday {
+  background: #1976d2 !important;
+  color: white !important;
+}<style>
 * { box-sizing: border-box; }
 
 body {
@@ -99,6 +102,10 @@ th {
 }
 tbody tr:nth-child(2n+3) td {
   border-top: 4px solid #111 !important;
+}
+  .date.sunday {
+  background: #1976d2 !important;
+  color: white !important;
 }</style>
 </head>
 
@@ -229,10 +236,10 @@ async function load() {
     let html = "";
 
     dates.forEach(date => {
-
+const isSunday = new Date(date + "T12:00:00").getDay() === 0;
       html += `
       <tr>
-        <td rowspan="2" class="date">${dateLabel(date)}</td>
+        <td rowspan="2" class="date${isSunday ? ' sunday' : ''}">${dateLabel(date)}</td>
         <td class="model gfs">GFS</td>
         ${cell(gfs[date]?.[12])}
         ${cell(gfs[date]?.[15])}
