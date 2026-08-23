@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jastarnia – GFS / ECMWF</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background: #f2f5f7;
+  color: #111;
+}
+
+h1 {
+  font-size: 19px;
+  margin: 8px 0 2px;
+  text-align: center;
+}
+
+.info {
+  text-align: center;
+  font-size: 11px;
+  margin-bottom: 6px;
+  color: #555;
+}
+
+.wrap {
+  padding: 3px;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+}
+
+th, td {
+  border: 1px solid #777;
+  padding: 2px 1px;
+  text-align: center;
+  line-height: 1.15;
+}
+
+th {
+  background: #263746;
+  color: white;
+  font-weight: 700;
+}
+
+.date {
+  width: 43px;
+  font-weight: 700;
+  background: #e6e6e6;
+}
+
+.model {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.gfs { background: #dbeafe; }
+.ecmwf { background: #dcfce7; }
+
+.wind {
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.arrow {
+  font-size: 16px;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.low    { background:#b9f6ca; }
+.medium { background:#fff176; }
+.good   { background:#ffb74d; }
+.strong { background:#ef5350; color:white; }
+.very   { background:#ab47bc; color:white; }
+
+.loading {
+  text-align:center;
+  padding:20px;
+  font-size:14px;
+}
+
+@media (max-width: 430px) {
+  table { font-size: 10px; }
+  th, td { padding: 2px 0; }
+  .wind { font-size: 11px; }
+  .arrow { font-size: 15px; }
+  .date { width: 38px; }
+}
+</style>
+</head>
+
+<body>
+
+<h1>🌊 Jastarnia – GFS / ECMWF</h1>
+<div class="info">
+  Wiatr w kt (porywy) • strzałka pokazuje kierunek wiatru
+</div>
+
+<div id="status" class="loading">Pobieram najnowszą prognozę…</div>
+
+<div class="wrap">
+<table id="forecast" style="display:none">
+<thead>
+<tr>
+  <th rowspan="2" class="date">Data</th>
+  <th rowspan="2">Model</th>
+  <th colspan="3">12:00</th>
+  <th colspan="3">15:00</th>
+  <th colspan="3">18:00</th>
+</tr>
+<tr>
+  <th>kt</th><th>p.</th><th>↗</th>
+  <th>kt</th><th>p.</th><th>↗</th>
+  <th>kt</th><th>p.</th><th>↗</th>
+</tr>
+</thead>
+<tbody id="body"></tbody>
+</table>
+</div>
+
+<script>
+
+const LAT = 54.696;
+const LON = 18.678;
+
+const hoursWanted = [12,15,18];
+
+const common =
+`latitude=${LAT}&longitude=${LON}` +
+`&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m` +
+`&wind_speed_unit=kn&timezone=Europe%2FWarsaw`;
+
+const urls = {
+  GFS:
+  `https://api.open-meteo.com/v1/gfs?${common}&forecast_days=15`,
+
+  ECMWF:
+  `https://api.open-meteo.com/v1/ecmwf?${common}&forecast_days=15`
+};
+
+function colour(speed) {
+  if (speed < 8) return "low";
+  if (speed < 13) return "medium";
+  if (speed < 18) return "good";
+  if (speed < 25) return "strong";
+  return "very";
+}
+
+function arrow(deg) {
+  return `<span class="arrow" style="transform:rotate(${deg}deg)">↓</span>`;
+}
+
+function parse(data) {
+
+  const result = {};
+
+  data.hourly.time.forEach((time,i) => {
+
+    const [date,t] = time.split("T");
+    const hour = Number(t.substring(0,2));
+
+    if (!hoursWanted.includes(hour)) return;
+
+    if (!result[date]) result[date] = {};
+
+    result[date][hour] = {
+      wind: Math.round(data.hourly.wind_speed_10m[i]),
+      gust: Math.round(data.hourly.wind_gusts_10m[i]),
+      dir: data.hourly.wind_direction_10m[i]
+    };
+  });
+
+  return result;
+}
+
+function cell(v) {
+
+  if (!v)
+    return `<td>–</td><td>–</td><td>–</td>`;
+
+  const c = colour(v.wind);
+
+  return `
+    <td class="wind ${c}">${v.wind}</td>
+    <td class="${c}">(${v.gust})</td>
+    <td class="${c}">${arrow(v.dir)}</td>
+  `;
+}
+
+function dateLabel(date) {
+
+  const d = new Date(date + "T12:00:00");
+
+  const days = ["Nd","Pn","Wt","Śr","Cz","Pt","So"];
+
+  return `${days[d.getDay()]}<br>${d.getDate()}.${d.getMonth()+1}`;
+}
+
+async function load() {
+
+  try {
+
+    const [gfsRaw,ecmwfRaw] = await Promise.all([
+      fetch(urls.GFS).then(r => r.json()),
+      fetch(urls.ECMWF).then(r => r.json())
+    ]);
+
+    const gfs = parse(gfsRaw);
+    const ecmwf = parse(ecmwfRaw);
+
+    const dates =
+      [...new Set([...Object.keys(gfs),...Object.keys(ecmwf)])]
+      .sort()
+      .slice(0,15);
+
+    let html = "";
+
+    dates.forEach(date => {
+
+      html += `
+      <tr>
+        <td rowspan="2" class="date">${dateLabel(date)}</td>
+        <td class="model gfs">GFS</td>
+        ${cell(gfs[date]?.[12])}
+        ${cell(gfs[date]?.[15])}
+        ${cell(gfs[date]?.[18])}
+      </tr>
+
+      <tr>
+        <td class="model ecmwf">ECM</td>
+        ${cell(ecmwf[date]?.[12])}
+        ${cell(ecmwf[date]?.[15])}
+        ${cell(ecmwf[date]?.[18])}
+      </tr>`;
+    });
+
+    document.getElementById("body").innerHTML = html;
+    document.getElementById("status").style.display = "none";
+    document.getElementById("forecast").style.display = "table";
+
+  } catch(e) {
+
+    document.getElementById("status").innerHTML =
+      "Nie udało się pobrać danych. Odśwież stronę.";
+
+  }
+}
+
+load();
+
+</script>
+
+</body>
+</html>
